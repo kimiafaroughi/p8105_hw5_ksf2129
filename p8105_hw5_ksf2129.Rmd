@@ -1,0 +1,64 @@
+---
+title: "p8105_hw5_ksf2129"
+author: "Kimia Faroughi"
+date: "2025-11-13"
+output: github_document
+---
+
+Load packages
+
+```{r, message = FALSE}
+library(tidyverse)
+```
+
+
+## Problem 1
+
+Function that randomly draws "birthdays" for each person in a fixed group size.
+
+```{r}
+bday_sim = function (n_room) {
+  
+  birthdays = sample(1:365, n_room, replace = TRUE)
+
+  #if number of unique birthdays is < n_room (there is a repeated bday) this will return as true
+  repeated_bday = length(unique(birthdays)) < n_room
+  
+  repeated_bday
+  
+}
+```
+
+Run function 10000 times for each group size between 2 and 50.
+
+```{r}
+bday_sim_results =
+  expand_grid(
+    bdays = 2:50, #number of people in the room
+    iter = 1:10000 #number of simulation runs
+  ) |> 
+  mutate(
+    result = map_lgl(bdays, bday_sim) #iterate
+  ) |> 
+  group_by(
+    bdays
+  ) |> 
+  summarize(
+    prob_repeat = mean(result) #probability at least two people in group share a birthday (avg across simulation runs)
+  )
+```
+
+Plot showing probability as function fo group size.
+
+```{r, fig.height = 5, fig.width = 9}
+bday_sim_results |> 
+  ggplot(aes(x = bdays, y = prob_repeat)) +
+  geom_point() +
+  geom_line() +
+  labs(
+    x = "Group Size",
+    y = "Probability of Shared Birthday"
+  )
+```
+
+The plot shows that as group size increases, the probability that at least two people in the group share a birthday also increases. By the time the group consists of 50 people, this probability is close to 1, whereas when the group consists of 2 people the probability is close to 0. 
