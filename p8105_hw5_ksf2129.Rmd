@@ -9,6 +9,7 @@ Load packages
 
 ```{r, message = FALSE}
 library(tidyverse)
+library(patchwork)
 ```
 
 
@@ -48,7 +49,7 @@ bday_sim_results =
   )
 ```
 
-Plot showing probability as function fo group size.
+Plot showing probability as function of group size.
 
 ```{r, fig.height = 5, fig.width = 9}
 bday_sim_results |> 
@@ -62,3 +63,122 @@ bday_sim_results |>
 ```
 
 The plot shows that as group size increases, the probability that at least two people in the group share a birthday also increases. By the time the group consists of 50 people, this probability is close to 1, whereas when the group consists of 2 people the probability is close to 0. 
+
+## Problem 2
+
+Write function to simulate data
+
+```{r}
+sim_mean_sd = function(mu, n_subj = 30, sigma = 5) { #fix n and sigma
+  
+  sim_df = 
+    tibble(
+      x = rnorm(mean = mu, n = n_subj, sd = sigma) #normal distribution
+    )
+  
+  sim_df |> 
+    summarize(
+      mu_hat = mean(x), 
+      p_value = t.test(x) |> broom::tidy() |> pull(p.value) #default significance level 0.05, mu 0
+    )
+  
+}
+```
+
+Set mu = 0 and generate 5000 datasets
+
+```{r}
+sim_results_0_df = 
+  expand_grid(
+    mu = 0,
+    iter = 1:5000
+  ) |> 
+  mutate(
+    results = map(mu, sim_mean_sd)
+  ) |> 
+  unnest(results)
+```
+
+Do this for mu = 1:6
+
+```{r}
+sim_results_df = 
+  expand_grid(
+    mu = 0:6,
+    iter = 1:5000
+  ) |> 
+  mutate(
+    results = map(mu, sim_mean_sd)
+  ) |> 
+  unnest(results)
+```
+
+Plot showing proportion of times null was rejected vs. true value of mu
+
+```{r, fig.height = 5, fig.width = 9}
+sim_results_df |> 
+  group_by(mu) |>
+  mutate(
+    mu = str_c("mu = ", mu),
+    reject = p_value < 0.05,
+    prop_reject = mean(reject) #proportion that are true (p-value < 0.05) for each mu
+  ) |>
+  ggplot(aes(x = mu, y = prop_reject)) +
+  geom_point() +
+  labs(
+    x = "Mu",
+    y = "Proportion of Times Null Was Rejected (Power)"
+  )
+```
+
+As effect size increases (distance of mu from 0), the power of the test (proportion of times the null hypothesis is rejected) also increases.
+
+Plot of true value of mu vs average estimate of mu hat
+
+```{r}
+all_plot =
+  sim_results_df |> 
+    group_by(mu) |> 
+    mutate(
+      mu = str_c("mu = ", mu),
+      estimated_mu_hat = mean(mu_hat)
+    ) |> 
+    ggplot(aes(x = mu, y = estimated_mu_hat)) +
+    geom_point() +
+    labs(
+      x = "True Value of Mu",
+      y = "Average Estimate of Mu Hat",
+      title = "All Samples"
+    ) +
+    scale_y_continuous(breaks = c(0, 1, 2, 3, 4, 5, 6))
+```
+
+Plot of true value of mu vs average estimate of mu only in samples where null was rejected 
+
+```{r}
+sig_plot =
+  sim_results_df |> 
+    filter(p_value < 0.05) |>
+    group_by(mu) |> 
+    mutate(
+      mu = str_c("mu = ", mu),
+      estimated_mu_hat = mean(mu_hat)
+    ) |> 
+    ggplot(aes(x = mu, y = estimated_mu_hat)) +
+    geom_point() +
+    labs(
+      x = "True Value of Mu",
+      y = "Average Estimate of Mu Hat",
+      title = "Samples Where Null Was Rejected"
+    ) +
+    scale_y_continuous(breaks = c(0, 1, 2, 3, 4, 5, 6))
+```
+
+Patchwork 
+
+```{r, fig.height = 5, fig.width = 9}
+mu_hat_plots = (all_plot + sig_plot)
+mu_hat_plots
+```
+
+The sample average of mu hat across tests for which the null is rejected (p-value < 0.05) is not approximately equal to the true value of mu, especially for when the true value of mu is from 0-3. This is because tests where the null was rejected represent values of mu hat that are very unlikely to be consistent with an underlying distribution where the true value of mu is 0. As mu increases, the effect size increases which means the power of the test to result in the rejection of a false null hypothesis increases. This means that for true values of mu further from 0, the test has greater power to reject the null hypothesis that mu = 0, making the average estimate of mu hat closer to the actual value of mu. 
