@@ -12,7 +12,6 @@ library(tidyverse)
 library(patchwork)
 ```
 
-
 ## Problem 1
 
 Function that randomly draws "birthdays" for each person in a fixed group size.
@@ -182,3 +181,127 @@ mu_hat_plots
 ```
 
 The sample average of mu hat across tests for which the null is rejected (p-value < 0.05) is not approximately equal to the true value of mu, especially for when the true value of mu is from 0-3. This is because tests where the null was rejected represent values of mu hat that are very unlikely to be consistent with an underlying distribution where the true value of mu is 0. As mu increases, the effect size increases which means the power of the test to result in the rejection of a false null hypothesis increases. This means that for true values of mu further from 0, the test has greater power to reject the null hypothesis that mu = 0, making the average estimate of mu hat closer to the actual value of mu. 
+
+## Problem 3
+
+Describe raw data
+
+```{r, message = FALSE}
+homicides_df = 
+  read_csv("data/homicide-data.csv")
+
+homicides_df
+```
+
+The raw data shows `r ncol(homicides_df)` variables describing a unique identifier, reported date of homicide, the victim's first and last name, race, age, sex, city, state, latitude and longitude, and disposition (the status of the case and perpetrator). These are described for `r nrow(homicides_df)` observations. 
+
+Create variable for city + state
+
+```{r}
+#create city_state
+homicides_df =
+  homicides_df |> 
+  mutate(city_state = str_c(city, state, sep = ", ")) |> 
+  filter(city_state != "Tulsa, AL") #remove Tulsa, AL
+```
+
+Summarize total homicides and unsolved homicides within cities
+
+```{r}
+homicides_df |> 
+  group_by(city_state) |> 
+  summarize(
+    total_homicides = n(),
+    number_unsolved = sum(disposition == "Closed without arrest" | disposition == "Open/No arrest")
+  ) |> 
+  knitr::kable() #there is Tulsa, AL with just 1 obs, remove that above
+```
+
+Run `prop.test` for Baltimore, MD
+
+```{r}
+baltimore_df = 
+  homicides_df |> 
+  filter(city_state == "Baltimore, MD") |> 
+  summarize(
+    total_homicides = n(),
+    number_unsolved = sum(disposition == "Closed without arrest" | disposition == "Open/No arrest")
+  )
+
+baltimore_test = 
+  prop.test(baltimore_df |> pull(number_unsolved), baltimore_df |> pull(total_homicides))
+
+baltimore_tidy = broom::tidy(baltimore_test)
+
+unname(baltimore_tidy |> pull(estimate))
+baltimore_tidy |> pull(conf.high)
+baltimore_tidy |> pull(conf.low)
+```
+
+Run this for each city in the dataset
+
+```{r}
+#create new df with relevant vars
+cities_df = 
+  homicides_df |> 
+  group_by(city_state) |> 
+  summarize(
+    total_homicides = n(),
+    number_unsolved = sum(disposition == "Closed without arrest" | disposition == "Open/No arrest")
+  )
+
+#nest so new df of relevant info for each city
+cities_nest =
+  cities_df |> 
+  nest(data = total_homicides:number_unsolved)
+```
+
+```{r}
+#create function
+cities_test = function(df) {
+  
+  test = 
+    prop.test(df |> pull(number_unsolved), df |> pull(total_homicides))
+  
+  tidy_test = broom::tidy(test)
+  
+  results_df =
+    tidy_test |> 
+    mutate(
+      prop_unsolved = unname(estimate),
+      lower_ci = conf.high,
+      upper_ci = conf.low
+    ) |> 
+    select(prop_unsolved, lower_ci, upper_ci)
+  
+  return(results_df)
+  
+}
+```
+
+```{r, warning = FALSE}
+#map
+unsolved_cities =
+  cities_nest |> 
+    mutate(
+      cities_results = map(data, cities_test)
+    ) |> 
+    unnest()
+```
+
+Plot with estimates and CIs for each city
+
+```{r, fig.height = 5, fig.width = 9}
+unsolved_cities |> 
+  mutate(
+    city_state = fct_reorder(city_state, prop_unsolved)
+  ) |> 
+  ggplot(aes(x = city_state, y = prop_unsolved)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1)) +
+  labs(
+      x = "City",
+      y = "Estimated Proportion of Unsolved Homicides\n and 95% CIs",
+    ) 
+```
